@@ -5,6 +5,11 @@
 //! strings.
 #![experimental]
 
+#![feature(phase)]
+#[phase(plugin)]
+extern crate quickcheck_macros;
+extern crate quickcheck;
+
 use std::char::is_whitespace;
 use std::collections::hashmap::HashMap;
 
@@ -267,6 +272,8 @@ pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
 mod test {
     use super::{
         unpack,
+        whitespace_split_tokeniser,
+        Error,
         UnmatchedQuote,
         UnfinishedEscape
     };
@@ -313,5 +320,19 @@ mod test {
     fn unpack_escaped_newline() {
         assert_eq!(unpack("abc\\nde"),     Ok(vec![ "abc\nde".into_string() ]));
         assert_eq!(unpack("\"abc\\nde\""), Ok(vec![ "abc\nde".into_string() ]));
+    }
+
+    /// The whitespace_split_tokeniser should provide the same strings as
+    /// the Words iterator for an arbitrary string.
+    #[quickcheck]
+    fn whitespace_split_tokeniser_words_equivalence(line : String) -> bool {
+        let line_slice = line.as_slice();
+
+        let lhs: Result<Vec<String>, Error> =
+            whitespace_split_tokeniser().add_line(line_slice).into_strings();
+        let rhs: Result<Vec<String>, Error> =
+            Ok(line_slice.words().map(|x| x.into_string()).collect());
+
+        lhs == rhs
     }
 }
