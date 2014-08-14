@@ -19,11 +19,27 @@ use std::char::is_whitespace;
 /// Tokeniser ended in a bad state (in the middle of a quoted string, or in
 /// the middle of an escape sequence).
 #[deriving(Clone)]
-pub struct Tokeniser {
-    vec:       Vec<String>,
-    in_word:   bool,
-    in_quoted: bool,
-    in_escape: bool
+pub struct Tokeniser<Q, E> {
+    /// The current vector of parsed words.
+    vec: Vec<String>,
+
+    /// Whether or not we are currently in a word.
+    in_word: bool,
+
+    /// The current closing quote character, if any.
+    quote: Option<char>,
+
+    /// Whether the tokeniser is currently processing an escape character.
+    escaping: bool,
+
+    /// Maps from quote openers to quote closers.
+    quote_pairs: Q,
+
+    /// Map from escape characters to their replacements.
+    escape_pairs: E,
+
+    /// The character preceding escape characters.
+    escape_leader: Option<char>
 }
 
 
@@ -41,8 +57,17 @@ pub enum Error {
 }
 
 
-impl Tokeniser {
+impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
     /// Creates a new, blank Tokeniser.
+    ///
+    /// # Arguments
+    ///
+    /// * `quote_pairs`   - A map, mapping characters that serve as opening
+    ///                     quotes to their closing quotes.
+    /// * `escape_pairs`  - A map, mapping escape characters to the characters
+    ///                     they represent.
+    /// * `escape_leader` - The character, if any, that starts an escape
+    ///                     sequence.
     ///
     /// # Return value
     ///
@@ -52,17 +77,26 @@ impl Tokeniser {
     /// # Example
     ///
     /// ```rust
+    /// use std::collections::hashmap::HashMap;
     /// use russet::Tokeniser;
     ///
-    /// let tok = Tokeniser::new();
+    /// let quote_pairs: HashMap<char, char> =
+    ///     vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
+    /// let escape_pairs: HashMap<char, char> =
+    ///     vec![ ( 'n', '\n' ) ].move_iter().collect();
+    /// let tok = Tokeniser::new(quote_pairs, escape_pairs, Some('\\'));
     /// assert_eq!(tok.into_strings(), Ok(vec![]));
     /// ```
-    pub fn new() -> Tokeniser {
+    pub fn new(quote_pairs: Q, escape_pairs: E, escape_leader: Option<char>)
+               -> Tokeniser<Q, E> {
         Tokeniser {
-            vec:       vec![ String::new() ],
-            in_word:   false,
-            in_quoted: false,
-            in_escape: false
+            vec: vec![ String::new() ],
+            in_word: false,
+            quote: None,
+            escaping: false,
+            quote_pairs: quote_pairs,
+            escape_pairs: escape_pairs,
+            escape_leader: escape_leader
         }
     }
 
@@ -77,53 +111,70 @@ impl Tokeniser {
     ///
     /// ```rust
     /// use russet::Tokeniser;
+    /// use std::collections::hashmap::HashMap;
     ///
-    /// let tok = Tokeniser::new().add_char('a').add_char('b').add_char('c');
-    /// assert_eq!(tok.into_strings(), Ok(vec![ "abc".into_string() ]));
+    /// let quote_pairs: HashMap<char, char> =
+    ///     vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
+    /// let escape_pairs: HashMap<char, char> =
+    ///     vec![ ( 'n', '\n' ) ].move_iter().collect();
+    /// let tok = Tokeniser::new(quote_pairs, escape_pairs, Some('\\'));
+    /// let tok2 = tok.add_char('a').add_char('b').add_char('c');
+    /// assert_eq!(tok2.into_strings(), Ok(vec![ "abc".into_string() ]));
     /// ```
-    pub fn add_char(self, chr: char) -> Tokeniser {
+    pub fn add_char(self, chr: char) -> Tokeniser<Q, E> {
         let mut new = self.clone();
 
         match (chr, self) {
             // Escape character while not escaped
             // -> Begin escape (and word if not in one already)
-            ( '\\', Tokeniser { in_escape: false, .. } ) => {
-                new.in_escape = true;
-                new.in_word   = true;
+            ( '\\', Tokeniser { escaping: false, .. } ) => {
+                new.escaping = true;
+                new.in_word = true;
             },
-            // Unescaped quote character
-            // -> Toggle quoting
-            ( '"', Tokeniser { in_escape: false, .. } ) => {
-                new.in_quoted = !new.in_quoted;
-                new.in_word   = true;
+            // Unescaped quote opening character, not currently in quoted word
+            // -> Start quoting
+            ( q, Tokeniser {
+                escaping: false,
+                quote: None,
+                quote_pairs: ref qs,
+                ..
+            } ) if qs.contains_key(&q) => {
+                new.quote = Some(qs.find(&q).unwrap().clone());
+                new.in_word = true;
+            },
+            // Unescaped quote closing character, in quoted word, quotes ok
+            // -> Stop quoting
+            ( c, Tokeniser { escaping: false, quote: Some(cc), .. } )
+                if c == cc => {
+                new.quote = None;
+                new.in_word = true;
             },
             // Unescaped whitespace, while not in a word
             // -> Ignore
-            ( a, Tokeniser { in_escape: false, in_word: false, .. } )
+            ( a, Tokeniser { escaping: false, in_word: false, .. } )
                 if is_whitespace(a) => (),
             // Unescaped whitespace, while in a non-quoted word
             // -> End word
-            ( a, Tokeniser {
-                in_escape: false,
-                in_word:   true,
-                in_quoted: false,
-                ..
-            } ) if is_whitespace(a) => {
+            ( a, Tokeniser { escaping: false, in_word: true, quote: None, .. } )
+                if is_whitespace(a) => {
                 new.in_word = false;
                 new.vec.push(String::new());
             },
-            // Escaped n
-            // -> Newline
-            ( 'n', Tokeniser { in_escape: true, .. } ) => {
-                new.in_word   = true;
-                new.in_escape = false;
-                new.vec.mut_last().mutate(|s| { s.push_char('\n'); s });
+            // Known escaped character
+            // -> Escape character
+            ( e, Tokeniser { escaping: true, escape_pairs: ref es, .. } )
+                if es.contains_key(&e) => {
+                let x = es.find(&e).unwrap();
+
+                new.in_word = true;
+                new.escaping = false;
+                new.vec.mut_last().mutate(|s| { s.push_char(x.clone()); s });
             },
             // Anything else
             // -> Echo
             ( a, _ ) => {
                 new.in_word   = true;
-                new.in_escape = false;
+                new.escaping = false;
                 new.vec.mut_last().mutate(|s| { s.push_char(a); s });
             }
         }
@@ -138,9 +189,9 @@ impl Tokeniser {
     /// A Result, containing the tokenised string vector if the Tokeniser
     /// was in a valid ending state, and an Error otherwise.
     pub fn into_strings(mut self) -> Result<Vec<String>, Error> {
-        if self.in_word && self.in_quoted {
+        if self.in_word && self.quote.is_some() {
             Err(UnmatchedQuote)
-        } else if self.in_escape {
+        } else if self.escaping {
             Err(UnfinishedEscape)
         } else {
             if self.vec.last().map(|s| s.len() == 0).unwrap_or(false) {
@@ -156,8 +207,16 @@ impl Tokeniser {
 /// Unpacks a line into its constituent words.
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
+    use std::collections::hashmap::HashMap;
+
+    let quote_pairs: HashMap<char, char> =
+        vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
+    let escape_pairs: HashMap<char, char> =
+        vec![ ( 'n', '\n' ) ].move_iter().collect();
+
     line.trim().chars().fold(
-        Tokeniser::new(), |s, chr| s.add_char(chr)
+        Tokeniser::new(quote_pairs, escape_pairs, Some('\\')),
+        |s, chr| s.add_char(chr)
     ).into_strings()
 }
 
