@@ -3,3 +3,9 @@
 name = "russet"
 version = "0.0.1"
 authors = ["Matt Windsor <mbw500@york.ac.uk>"]
+
+[dependencies.quickcheck]
+git = "https://github.com/BurntSushi/quickcheck"
+
+[dependencies.quickcheck_macros]
+git = "https://github.com/BurntSushi/quickcheck"
