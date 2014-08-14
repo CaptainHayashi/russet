@@ -43,7 +43,21 @@ pub enum Error {
 
 impl Tokeniser {
     /// Creates a new, blank Tokeniser.
-    fn new() -> Tokeniser {
+    ///
+    /// # Return value
+    ///
+    /// A new Tokeniser, with an empty state.  Attempting to take the
+    /// string vector of the Tokeniser yields the empty vector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use russet::Tokeniser;
+    ///
+    /// let tok = Tokeniser::new();
+    /// assert_eq!(tok.into_strings(), Ok(vec![]));
+    /// ```
+    pub fn new() -> Tokeniser {
         Tokeniser {
             vec:       vec![ String::new() ],
             in_word:   false,
@@ -52,8 +66,22 @@ impl Tokeniser {
         }
     }
 
-    // Performs one step of the tokeniser.
-    fn step(self, chr: char) -> Tokeniser {
+    /// Feeds a single character `chr` to a Tokeniser.
+    ///
+    /// # Return value
+    ///
+    /// A new Tokeniser, representing the state of the Tokeniser after
+    /// consuming `chr`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use russet::Tokeniser;
+    ///
+    /// let tok = Tokeniser::new().add_char('a').add_char('b').add_char('c');
+    /// assert_eq!(tok.into_strings(), Ok(vec![ "abc".into_string() ]));
+    /// ```
+    pub fn add_char(self, chr: char) -> Tokeniser {
         let mut new = self.clone();
 
         match (chr, self) {
@@ -104,7 +132,12 @@ impl Tokeniser {
     }
 
     /// Destroys the tokeniser, extracting the string vector.
-    fn into_strings(mut self) -> Result<Vec<String>, Error> {
+    ///
+    /// # Return value
+    ///
+    /// A Result, containing the tokenised string vector if the Tokeniser
+    /// was in a valid ending state, and an Error otherwise.
+    pub fn into_strings(mut self) -> Result<Vec<String>, Error> {
         if self.in_word && self.in_quoted {
             Err(UnmatchedQuote)
         } else if self.in_escape {
@@ -124,7 +157,7 @@ impl Tokeniser {
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
     line.trim().chars().fold(
-        Tokeniser::new(), |s, chr| s.step(chr)
+        Tokeniser::new(), |s, chr| s.add_char(chr)
     ).into_strings()
 }
 
