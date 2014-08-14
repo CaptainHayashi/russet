@@ -32,8 +32,8 @@ pub struct Tokeniser<Q, E> {
     /// Whether or not we are currently in a word.
     in_word: bool,
 
-    /// The current closing quote character, if any.
-    quote: Option<char>,
+    /// The current closing quote character and quote mode, if any.
+    quote: Option<( char, QuoteMode )>,
 
     /// Whether the tokeniser is currently processing an escape character.
     escaping: bool,
@@ -46,6 +46,20 @@ pub struct Tokeniser<Q, E> {
 
     /// The character preceding escape characters.
     escape_leader: Option<char>
+}
+
+
+/// A quote mode.
+#[deriving(Clone)]
+pub enum QuoteMode {
+    /// All characters except the closing character have their literal value.
+    /// This is equivalent to single-quoting in POSIX shell.
+    IgnoreEscapes,
+
+    /// All characters except the closing character and escape sequences
+    /// have their literal value.  This is roughly equivalent to
+    /// double-quoting in POSIX shell.
+    ParseEscapes
 }
 
 
@@ -63,15 +77,17 @@ pub enum Error {
 }
 
 
-impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
+impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
+     E: Map<char, char>+Clone> Tokeniser<Q, E> {
     /// Creates a new, blank Tokeniser.
     ///
     /// # Arguments
     ///
     /// * `quote_pairs`   - A map, mapping characters that serve as opening
-    ///                     quotes to their closing quotes.
+    ///                     quotes to their closing quotes and quote modes.
     /// * `escape_pairs`  - A map, mapping escape characters to the characters
-    ///                     they represent.
+    ///                     they represent.  An empty map is treated as a
+    ///                     _shell-style escape_: the
     /// * `escape_leader` - The character, if any, that starts an escape
     ///                     sequence.
     ///
@@ -84,10 +100,10 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
     ///
     /// ```rust
     /// use std::collections::hashmap::HashMap;
-    /// use russet::Tokeniser;
+    /// use russet::{ Tokeniser, ParseEscapes, QuoteMode };
     ///
-    /// let quote_pairs: HashMap<char, char> =
-    ///     vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
+    /// let quote_pairs: HashMap<char, ( char, QuoteMode )> =
+    ///     vec![ ( '\"', ( '\"', ParseEscapes ) ) ].move_iter().collect();
     /// let escape_pairs: HashMap<char, char> =
     ///     vec![ ( 'n', '\n' ) ].move_iter().collect();
     /// let tok = Tokeniser::new(quote_pairs, escape_pairs, Some('\\'));
@@ -116,14 +132,9 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
     /// # Example
     ///
     /// ```rust
-    /// use russet::Tokeniser;
-    /// use std::collections::hashmap::HashMap;
+    /// use russet::whitespace_split_tokeniser;
     ///
-    /// let quote_pairs: HashMap<char, char> =
-    ///     vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
-    /// let escape_pairs: HashMap<char, char> =
-    ///     vec![ ( 'n', '\n' ) ].move_iter().collect();
-    /// let tok = Tokeniser::new(quote_pairs, escape_pairs, Some('\\'));
+    /// let tok = whitespace_split_tokeniser();
     /// let tok2 = tok.add_char('a').add_char('b').add_char('c');
     /// assert_eq!(tok2.into_strings(), Ok(vec![ "abc".into_string() ]));
     /// ```
@@ -131,42 +142,16 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
         let mut new = self.clone();
 
         match (chr, self) {
-            // Escape character while not escaped
-            // -> Begin escape (and word if not in one already)
-            ( '\\', Tokeniser { escaping: false, .. } ) => {
-                new.escaping = true;
+            // ESCAPE SEQUENCES
+            //   Shell-style escaping (no escapes defined)
+            //   -> Echo character
+            ( c, Tokeniser { escaping: true, escape_pairs: ref es, .. } )
+                if es.is_empty() => {
                 new.in_word = true;
+                new.escaping = false;
+                new.vec.mut_last().mutate(|s| { s.push_char(c); s });
             },
-            // Unescaped quote opening character, not currently in quoted word
-            // -> Start quoting
-            ( q, Tokeniser {
-                escaping: false,
-                quote: None,
-                quote_pairs: ref qs,
-                ..
-            } ) if qs.contains_key(&q) => {
-                new.quote = Some(qs.find(&q).unwrap().clone());
-                new.in_word = true;
-            },
-            // Unescaped quote closing character, in quoted word, quotes ok
-            // -> Stop quoting
-            ( c, Tokeniser { escaping: false, quote: Some(cc), .. } )
-                if c == cc => {
-                new.quote = None;
-                new.in_word = true;
-            },
-            // Unescaped whitespace, while not in a word
-            // -> Ignore
-            ( a, Tokeniser { escaping: false, in_word: false, .. } )
-                if is_whitespace(a) => (),
-            // Unescaped whitespace, while in a non-quoted word
-            // -> End word
-            ( a, Tokeniser { escaping: false, in_word: true, quote: None, .. } )
-                if is_whitespace(a) => {
-                new.in_word = false;
-                new.vec.push(String::new());
-            },
-            // Known escaped character
+            // Known escaped character, otherwise
             // -> Escape character
             ( e, Tokeniser { escaping: true, escape_pairs: ref es, .. } )
                 if es.contains_key(&e) => {
@@ -176,8 +161,69 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
                 new.escaping = false;
                 new.vec.mut_last().mutate(|s| { s.push_char(x.clone()); s });
             },
-            // Anything else
-            // -> Echo
+
+            // ESCAPE LEADER
+            //   Escape leader, not in quotes
+            //   -> Begin escape (and word if not in one already)
+            ( c, Tokeniser {
+                escaping: false,
+                quote: None,
+                escape_leader: Some(e),
+                ..
+            } ) if e == c => {
+                new.escaping = true;
+                new.in_word = true;
+            },
+            //   Escape leader, in escape-permitting quotes
+            //   -> Begin escape (and word if not in one already)
+            ( c, Tokeniser {
+                escaping: false,
+                quote: Some(( _, ParseEscapes )),
+                escape_leader: Some(e),
+                ..
+            } ) if e == c => {
+                new.escaping = true;
+                new.in_word = true;
+            },
+
+            // QUOTE OPENING
+            //   Quote opening character, not currently in quoted word
+            //   -> Start quoting
+            ( q, Tokeniser {
+                escaping: false,
+                quote: None,
+                quote_pairs: ref qs,
+                ..
+            } ) if qs.contains_key(&q) => {
+                new.quote = Some(qs.find(&q).unwrap().clone());
+                new.in_word = true;
+            },
+
+            // QUOTE CLOSING
+            //   Quote closing character, in quoted word, quotes ok
+            //   -> Stop quoting
+            ( c, Tokeniser { escaping: false, quote: Some(( cc, _ )), .. } )
+                if c == cc => {
+                new.quote = None;
+                new.in_word = true;
+            },
+
+            // UNESCAPED WHITESPACE
+            //   Unescaped whitespace, while not in a word
+            //   -> Ignore
+            ( a, Tokeniser { escaping: false, in_word: false, .. } )
+                if is_whitespace(a) => (),
+            //   Unescaped whitespace, while in a non-quoted word
+            //   -> End word
+            ( a, Tokeniser { escaping: false, in_word: true, quote: None, .. } )
+                if is_whitespace(a) => {
+                new.in_word = false;
+                new.vec.push(String::new());
+            },
+
+            // DEFAULT
+            //   Anything else
+            //   -> Echo
             ( a, _ ) => {
                 new.in_word = true;
                 new.escaping = false;
@@ -221,7 +267,8 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
 
 
 /// A type for tokenisers returned by Russet.
-pub type StockTokeniser = Tokeniser<HashMap<char, char>, HashMap<char, char>>;
+pub type StockTokeniser = Tokeniser<HashMap<char, ( char, QuoteMode )>,
+                                    HashMap<char, char>>;
 
 
 /// Creates a Tokeniser that doesn't support quoting or escaping.
@@ -243,21 +290,54 @@ pub type StockTokeniser = Tokeniser<HashMap<char, char>, HashMap<char, char>>;
 ///                                         "\"ignores".into_string(),
 ///                                         "quotes\"".into_string(),
 ///                                         "and".into_string(),
-///                                         "slashes".into_string())));
+///                                         "\\slashes".into_string())));
 /// ```
 #[experimental]
 pub fn whitespace_split_tokeniser() -> StockTokeniser {
-    let quote_pairs: HashMap<char, char> = HashMap::new();
+    let quote_pairs: HashMap<char, ( char, QuoteMode )> = HashMap::new();
     let escape_pairs: HashMap<char, char> = HashMap::new();
     Tokeniser::new(quote_pairs, escape_pairs, None)
+}
+
+
+/// Creates a Tokeniser that provides shell-style quoting.
+///
+/// This recognises pairs of " and ' as delineating words, and parses
+/// anything following a \ as its literal value.  Anything in single quotes
+/// is returned verbatim.
+///
+/// # Return value
+///
+/// A Tokeniser with shell-style quoting.
+///
+/// # Example
+///
+/// ```rust
+/// use russet::shell_style_tokeniser;
+///
+/// let tok = shell_style_tokeniser();
+/// let tok2 = tok.add_line("word1 word\\ 2 \"word\\ 3\" 'word\\ \"4\"'");
+/// assert_eq!(tok2.into_strings(), Ok(vec!("word1".into_string(),
+///                                         "word 2".into_string(),
+///                                         "word 3".into_string(),
+///                                         "word\\ \"4\"".into_string())));
+/// ```
+#[experimental]
+pub fn shell_style_tokeniser() -> StockTokeniser {
+    let quote_pairs: HashMap<char, ( char, QuoteMode )> =
+        vec![ ( '\"', ( '\"', ParseEscapes ) ),
+              ( '\'', ( '\'', IgnoreEscapes ) ) ].move_iter().collect();
+    let escape_pairs: HashMap<char, char> = HashMap::new();
+    Tokeniser::new(quote_pairs, escape_pairs, Some('\\'))
 }
 
 
 /// Unpacks a line into its constituent words.
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
-    let quote_pairs: HashMap<char, char> =
-        vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
+    let quote_pairs: HashMap<char, ( char, QuoteMode )> =
+        vec![ ( '\"', ( '\"', ParseEscapes ) ),
+              ( '\'', ( '\'', ParseEscapes ) ) ].move_iter().collect();
     let escape_pairs: HashMap<char, char> =
         vec![ ( 'n', '\n' ) ].move_iter().collect();
 
