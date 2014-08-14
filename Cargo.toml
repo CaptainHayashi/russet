@@ -1,0 +1,5 @@
+[package]
+
+name = "russet"
+version = "0.0.1"
+authors = ["Matt Windsor <mbw500@york.ac.uk>"]
