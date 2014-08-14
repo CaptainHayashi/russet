@@ -8,8 +8,18 @@
 use std::char::is_whitespace;
 
 
+/// A tokeniser object.
+///
+/// A Tokeniser can be fed characters from an iterator, string, or individually.
+/// It is an _immutable_ object: actions on a Tokeniser consume the Tokeniser,
+/// and produce a fresh copy of the Tokeniser.
+///
+/// At any stage, a Tokeniser can be consumed to produce the vector of words
+/// it has read, using the `into_strings` method.  This method may fail if the
+/// Tokeniser ended in a bad state (in the middle of a quoted string, or in
+/// the middle of an escape sequence).
 #[deriving(Clone)]
-struct TokeniserState {
+pub struct Tokeniser {
     vec:       Vec<String>,
     in_word:   bool,
     in_quoted: bool,
@@ -18,6 +28,9 @@ struct TokeniserState {
 
 
 /// A tokeniser error.
+///
+/// A Tokeniser's `into_strings` method can fail with one of the following
+/// errors if called while the Tokeniser is in an unfinished state.
 #[deriving(Eq, PartialEq, Show)]
 pub enum Error {
     /// A quotation was opened, but not closed.
@@ -28,10 +41,10 @@ pub enum Error {
 }
 
 
-impl TokeniserState {
-    /// Creates a new, blank TokeniserState.
-    fn new() -> TokeniserState {
-        TokeniserState {
+impl Tokeniser {
+    /// Creates a new, blank Tokeniser.
+    fn new() -> Tokeniser {
+        Tokeniser {
             vec:       vec![ String::new() ],
             in_word:   false,
             in_quoted: false,
@@ -40,29 +53,29 @@ impl TokeniserState {
     }
 
     // Performs one step of the tokeniser.
-    fn step(self, chr: char) -> TokeniserState {
+    fn step(self, chr: char) -> Tokeniser {
         let mut new = self.clone();
 
         match (chr, self) {
             // Escape character while not escaped
             // -> Begin escape (and word if not in one already)
-            ( '\\', TokeniserState { in_escape: false, .. } ) => {
+            ( '\\', Tokeniser { in_escape: false, .. } ) => {
                 new.in_escape = true;
                 new.in_word   = true;
             },
             // Unescaped quote character
             // -> Toggle quoting
-            ( '"', TokeniserState { in_escape: false, .. } ) => {
+            ( '"', Tokeniser { in_escape: false, .. } ) => {
                 new.in_quoted = !new.in_quoted;
                 new.in_word   = true;
             },
             // Unescaped whitespace, while not in a word
             // -> Ignore
-            ( a, TokeniserState { in_escape: false, in_word: false, .. } )
+            ( a, Tokeniser { in_escape: false, in_word: false, .. } )
                 if is_whitespace(a) => (),
             // Unescaped whitespace, while in a non-quoted word
             // -> End word
-            ( a, TokeniserState {
+            ( a, Tokeniser {
                 in_escape: false,
                 in_word:   true,
                 in_quoted: false,
@@ -73,7 +86,7 @@ impl TokeniserState {
             },
             // Escaped n
             // -> Newline
-            ( 'n', TokeniserState { in_escape: true, .. } ) => {
+            ( 'n', Tokeniser { in_escape: true, .. } ) => {
                 new.in_word   = true;
                 new.in_escape = false;
                 new.vec.mut_last().mutate(|s| { s.push_char('\n'); s });
@@ -91,7 +104,7 @@ impl TokeniserState {
     }
 
     /// Destroys the tokeniser, extracting the string vector.
-    fn unwrap(mut self) -> Result<Vec<String>, Error> {
+    fn into_strings(mut self) -> Result<Vec<String>, Error> {
         if self.in_word && self.in_quoted {
             Err(UnmatchedQuote)
         } else if self.in_escape {
@@ -111,8 +124,8 @@ impl TokeniserState {
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
     line.trim().chars().fold(
-        TokeniserState::new(), |s, chr| s.step(chr)
-    ).unwrap()
+        Tokeniser::new(), |s, chr| s.step(chr)
+    ).into_strings()
 }
 
 
