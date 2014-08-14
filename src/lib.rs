@@ -146,20 +146,14 @@ impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
             //   Shell-style escaping (no escapes defined)
             //   -> Echo character
             ( c, Tokeniser { escaping: true, escape_pairs: ref es, .. } )
-                if es.is_empty() => {
-                new.in_word = true;
-                new.escaping = false;
-                new.vec.mut_last().mutate(|s| { s.push_char(c); s });
-            },
+                if es.is_empty() => new.emit(c),
             // Known escaped character, otherwise
             // -> Escape character
             ( e, Tokeniser { escaping: true, escape_pairs: ref es, .. } )
                 if es.contains_key(&e) => {
                 let x = es.find(&e).unwrap();
 
-                new.in_word = true;
-                new.escaping = false;
-                new.vec.mut_last().mutate(|s| { s.push_char(x.clone()); s });
+                new.emit(x.clone());
             },
 
             // ESCAPE LEADER
@@ -170,10 +164,7 @@ impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
                 quote: None,
                 escape_leader: Some(e),
                 ..
-            } ) if e == c => {
-                new.escaping = true;
-                new.in_word = true;
-            },
+            } ) if e == c => new.start_escaping(),
             //   Escape leader, in escape-permitting quotes
             //   -> Begin escape (and word if not in one already)
             ( c, Tokeniser {
@@ -181,10 +172,7 @@ impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
                 quote: Some(( _, ParseEscapes )),
                 escape_leader: Some(e),
                 ..
-            } ) if e == c => {
-                new.escaping = true;
-                new.in_word = true;
-            },
+            } ) if e == c => new.start_escaping(),
 
             // QUOTE OPENING
             //   Quote opening character, not currently in quoted word
@@ -224,11 +212,7 @@ impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
             // DEFAULT
             //   Anything else
             //   -> Echo
-            ( a, _ ) => {
-                new.in_word = true;
-                new.escaping = false;
-                new.vec.mut_last().mutate(|s| { s.push_char(a); s });
-            }
+            ( a, _ ) => new.emit(a)
         }
 
         new
@@ -256,11 +240,32 @@ impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
         } else if self.escaping {
             Err(UnfinishedEscape)
         } else {
-            if self.vec.last().map(|s| s.len() == 0).unwrap_or(false) {
-                self.vec.pop();
-            }
-
+            self.drop_empty_current_string();
             Ok(self.vec)
+        }
+    }
+
+    /// Adds a character into a Tokeniser's current string.
+    /// This automatically sets the Tokeniser's state to be in a word,
+    /// and clears any escape sequence flag.
+    fn emit(&mut self, c: char) {
+        self.in_word = true;
+        self.escaping = false;
+        self.vec.mut_last().mutate(|s| { s.push_char(c); s });
+    }
+
+    /// Switches on escape mode.
+    /// This automatically sets the Tokeniser to be in a word, if it isn't
+    /// already.
+    fn start_escaping(&mut self) {
+        self.escaping = true;
+        self.in_word = true;
+    }
+
+    /// Drops the current working string, if it is empty.
+    fn drop_empty_current_string(&mut self) {
+        if self.vec.last().map(|s| s.is_empty()).unwrap_or(false) {
+            self.vec.pop();
         }
     }
 }
