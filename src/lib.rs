@@ -6,6 +6,7 @@
 #![experimental]
 
 use std::char::is_whitespace;
+use std::collections::hashmap::HashMap;
 
 
 /// A tokeniser object.
@@ -173,13 +174,23 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
             // Anything else
             // -> Echo
             ( a, _ ) => {
-                new.in_word   = true;
+                new.in_word = true;
                 new.escaping = false;
                 new.vec.mut_last().mutate(|s| { s.push_char(a); s });
             }
         }
 
         new
+    }
+
+    /// Feeds a line into the Tokeniser.
+    ///
+    /// # Return value
+    ///
+    /// A new Tokeniser, representing the state of the Tokeniser after
+    /// consuming `line`.
+    pub fn add_line(self, line: &str) -> Tokeniser<Q, E> {
+        line.trim().chars().fold(self, |s, chr| s.add_char(chr))
     }
 
     /// Destroys the tokeniser, extracting the string vector.
@@ -204,11 +215,42 @@ impl<Q: Map<char, char>+Clone, E: Map<char, char>+Clone> Tokeniser<Q, E> {
 }
 
 
+/// A type for tokenisers returned by Russet.
+pub type StockTokeniser = Tokeniser<HashMap<char, char>, HashMap<char, char>>;
+
+
+/// Creates a Tokeniser that doesn't support quoting or escaping.
+///
+/// This is effectively equivalent to the Words iterator on string slices.
+///
+/// # Return value
+///
+/// A Tokeniser with no quoting or escaping.
+///
+/// # Example
+///
+/// ```rust
+/// use russet::whitespace_split_tokeniser;
+///
+/// let tok = whitespace_split_tokeniser();
+/// let tok2 = tok.add_line("this \"ignores quotes\"  and\n  \\slashes");
+/// assert_eq!(tok2.into_strings(), Ok(vec!("this".into_string(),
+///                                         "\"ignores".into_string(),
+///                                         "quotes\"".into_string(),
+///                                         "and".into_string(),
+///                                         "slashes".into_string())));
+/// ```
+#[experimental]
+pub fn whitespace_split_tokeniser() -> StockTokeniser {
+    let quote_pairs: HashMap<char, char> = HashMap::new();
+    let escape_pairs: HashMap<char, char> = HashMap::new();
+    Tokeniser::new(quote_pairs, escape_pairs, None)
+}
+
+
 /// Unpacks a line into its constituent words.
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
-    use std::collections::hashmap::HashMap;
-
     let quote_pairs: HashMap<char, char> =
         vec![ ( '\"', '\"' ), ( '\'', '\'' ) ].move_iter().collect();
     let escape_pairs: HashMap<char, char> =
