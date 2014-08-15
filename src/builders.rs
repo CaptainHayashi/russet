@@ -77,19 +77,45 @@ pub fn shell_style_tokeniser() -> StockTokeniser {
 }
 
 
+/// Creates a Tokeniser that provides C-style quoting.
+///
+/// This recognises pairs of " as delineating words, and parses
+/// `\n`, `\r`, `\"`, `\'`, and `\t` as their C equivalents.
+///
+/// # Return value
+///
+/// A Tokeniser with C-style quoting.
+///
+/// # Example
+///
+/// ```rust
+/// use russet::c_style_tokeniser;
+///
+/// let tok = c_style_tokeniser();
+/// let tok2 = tok.add_line("word1\nword\\n2 \"word\n3\" \"word\\n4\"");
+/// assert_eq!(tok2.into_strings(), Ok(vec!("word1".into_string(),
+///                                         "word\n2".into_string(),
+///                                         "word\n3".into_string(),
+///                                         "word\n4".into_string())));
+/// ```
+#[experimental]
+pub fn c_style_tokeniser() -> StockTokeniser {
+    let quote_pairs: HashMap<char, ( char, QuoteMode )> =
+        vec![ ( '\"', ( '\"', ParseEscapes ) ) ].move_iter().collect();
+    let escape_pairs: HashMap<char, char> =
+        vec![ ( 'n',  '\n' ),
+              ( 'r',  '\r' ),
+              ( '\"', '\"' ),
+              ( '\'', '\'' ),
+              ( 't',  '\t' ) ].move_iter().collect();
+    Tokeniser::new(quote_pairs, escape_pairs, Some('\\'))
+}
+
+
 /// Unpacks a line into its constituent words.
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
-    let quote_pairs: HashMap<char, ( char, QuoteMode )> =
-        vec![ ( '\"', ( '\"', ParseEscapes ) ),
-              ( '\'', ( '\'', ParseEscapes ) ) ].move_iter().collect();
-    let escape_pairs: HashMap<char, char> =
-        vec![ ( 'n', '\n' ) ].move_iter().collect();
-
-    line.trim().chars().fold(
-        Tokeniser::new(quote_pairs, escape_pairs, Some('\\')),
-        |s, chr| s.add_char(chr)
-    ).into_strings()
+    c_style_tokeniser().add_line(line.trim()).into_strings()
 }
 
 
