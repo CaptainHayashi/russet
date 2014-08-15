@@ -112,10 +112,21 @@ pub fn c_style_tokeniser() -> StockTokeniser {
 }
 
 
+pub trait LineTokeniser {
+    fn line(self, ln: &str) -> Result<Vec<String>, Error>;
+}
+
+impl LineTokeniser for fn() -> StockTokeniser {
+    fn line(self, ln: &str) -> Result<Vec<String>, Error> {
+        self().add_line(ln.trim()).into_strings()
+    }
+}
+
+
 /// Unpacks a line into its constituent words.
 #[experimental]
 pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
-    c_style_tokeniser().add_line(line.trim()).into_strings()
+    c_style_tokeniser.line(line)
 }
 
 
