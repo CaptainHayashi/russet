@@ -218,14 +218,24 @@ impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
         new
     }
 
-    /// Feeds a line into the Tokeniser.
+    /// Feeds an Iterator of chars, `it`, into the Tokeniser.
+    ///
+    /// # Return value
+    ///
+    /// A new Tokeniser, representing the state of the Tokeniser after
+    /// consuming the characters in `it`.
+    pub fn add_iterator<I: Iterator<char>>(self, mut it: I) -> Tokeniser<Q, E> {
+        it.fold(self, |s, chr| s.add_char(chr))
+    }
+
+    /// Feeds a line, `line`, into the Tokeniser.
     ///
     /// # Return value
     ///
     /// A new Tokeniser, representing the state of the Tokeniser after
     /// consuming `line`.
     pub fn add_line(self, line: &str) -> Tokeniser<Q, E> {
-        line.trim().chars().fold(self, |s, chr| s.add_char(chr))
+        self.add_iterator(line.trim().chars())
     }
 
     /// Destroys the tokeniser, extracting the string vector.
