@@ -77,8 +77,12 @@ pub enum Error {
 }
 
 
-impl<Q: Map<char, ( char, QuoteMode )>+Collection+Clone,
-     E: Map<char, char>+Clone> Tokeniser<Q, E> {
+impl<Q, E> Tokeniser<Q, E>
+    where Q: Map<char, ( char, QuoteMode )>,
+          E: Map<char, char>,
+          Q: Clone,
+          E: Clone,
+          Q: Collection {
     /// Creates a new, blank Tokeniser.
     ///
     /// # Arguments
