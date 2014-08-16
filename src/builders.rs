@@ -1,7 +1,13 @@
 //! Builder functions for common tokeniser configurations.
+#![experimental]
 
 use std::collections::hashmap::HashMap;
 
+use escape_scheme::{
+    SimpleEscapeScheme,
+    LiteralEscape,
+    c_escapes
+};
 use tokeniser::{
     Error,
     Tokeniser,
@@ -11,9 +17,13 @@ use tokeniser::{
 };
 
 
+type StockQuoteMap = HashMap<char, ( char, QuoteMode )>;
+type StockEscapeScheme = SimpleEscapeScheme<HashMap<char, char>>;
+type StockEscapeMap = HashMap<char, StockEscapeScheme>;
+
 /// A type for tokenisers returned by Russet builders.
-pub type StockTokeniser = Tokeniser<HashMap<char, ( char, QuoteMode )>,
-                                    HashMap<char, char>>;
+pub type StockTokeniser =
+    Tokeniser<StockQuoteMap, StockEscapeMap, StockEscapeScheme>;
 
 
 /// Creates a Tokeniser that doesn't support quoting or escaping.
@@ -39,9 +49,9 @@ pub type StockTokeniser = Tokeniser<HashMap<char, ( char, QuoteMode )>,
 /// ```
 #[experimental]
 pub fn whitespace_split_tokeniser() -> StockTokeniser {
-    let quote_pairs: HashMap<char, ( char, QuoteMode )> = HashMap::new();
-    let escape_pairs: HashMap<char, char> = HashMap::new();
-    Tokeniser::new(quote_pairs, escape_pairs, None)
+    let quote_map: StockQuoteMap = HashMap::new();
+    let escape_map: StockEscapeMap = HashMap::new();
+    Tokeniser::new(quote_map, escape_map)
 }
 
 
@@ -69,11 +79,12 @@ pub fn whitespace_split_tokeniser() -> StockTokeniser {
 /// ```
 #[experimental]
 pub fn shell_style_tokeniser() -> StockTokeniser {
-    let quote_pairs: HashMap<char, ( char, QuoteMode )> =
+    let quote_map: StockQuoteMap =
         vec![ ( '\"', ( '\"', ParseEscapes ) ),
               ( '\'', ( '\'', IgnoreEscapes ) ) ].move_iter().collect();
-    let escape_pairs: HashMap<char, char> = HashMap::new();
-    Tokeniser::new(quote_pairs, escape_pairs, Some('\\'))
+    let escape_map: StockEscapeMap =
+        vec![ ( '\\', LiteralEscape ) ].move_iter().collect();
+    Tokeniser::new(quote_map, escape_map)
 }
 
 
@@ -100,15 +111,11 @@ pub fn shell_style_tokeniser() -> StockTokeniser {
 /// ```
 #[experimental]
 pub fn c_style_tokeniser() -> StockTokeniser {
-    let quote_pairs: HashMap<char, ( char, QuoteMode )> =
+    let quote_map: StockQuoteMap =
         vec![ ( '\"', ( '\"', ParseEscapes ) ) ].move_iter().collect();
-    let escape_pairs: HashMap<char, char> =
-        vec![ ( 'n',  '\n' ),
-              ( 'r',  '\r' ),
-              ( '\"', '\"' ),
-              ( '\'', '\'' ),
-              ( 't',  '\t' ) ].move_iter().collect();
-    Tokeniser::new(quote_pairs, escape_pairs, Some('\\'))
+    let escape_map: StockEscapeMap =
+        vec![ ( '\\', c_escapes() ) ].move_iter().collect();
+    Tokeniser::new(quote_map, escape_map)
 }
 
 

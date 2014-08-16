@@ -26,6 +26,12 @@ pub use builders::{
     shell_style_tokeniser,
     whitespace_split_tokeniser
 };
+pub use escape_scheme::{
+    EscapeScheme,
+    SimpleEscapeScheme,
+    LiteralEscape,
+    MapEscape
+};
 pub use tokeniser::{
     Error,
     IgnoreEscapes,
@@ -35,4 +41,5 @@ pub use tokeniser::{
 };
 
 pub mod builders;
+pub mod escape_scheme;
 pub mod tokeniser;
