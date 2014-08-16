@@ -118,7 +118,7 @@ pub trait LineTokeniser {
 
 impl LineTokeniser for fn() -> StockTokeniser {
     fn line(self, ln: &str) -> Result<Vec<String>, Error> {
-        self().add_line(ln.trim()).into_strings()
+        self().add_line(ln).into_strings()
     }
 }
 

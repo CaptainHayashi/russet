@@ -218,18 +218,30 @@ impl<Q, E> Tokeniser<Q, E>
     ///
     /// A new Tokeniser, representing the state of the Tokeniser after
     /// consuming the characters in `it`.
-    pub fn add_iterator<I: Iterator<char>>(self, mut it: I) -> Tokeniser<Q, E> {
+    pub fn add_iter<I: Iterator<char>>(self, mut it: I) -> Tokeniser<Q, E> {
         it.fold(self, |s, chr| s.add_char(chr))
     }
 
+    /// Feeds a string, `string`, into the Tokeniser.
+    ///
+    /// # Return value
+    ///
+    /// A new Tokeniser, representing the state of the Tokeniser after
+    /// consuming `string`.
+    pub fn add_string(self, string: &str) -> Tokeniser<Q, E> {
+        self.add_iter(string.chars())
+    }
+
     /// Feeds a line, `line`, into the Tokeniser.
+    /// This differs from `add_str` in that the line is whitespace-trimmed
+    /// before adding.
     ///
     /// # Return value
     ///
     /// A new Tokeniser, representing the state of the Tokeniser after
     /// consuming `line`.
     pub fn add_line(self, line: &str) -> Tokeniser<Q, E> {
-        self.add_iterator(line.trim().chars())
+        self.add_string(line.trim())
     }
 
     /// Destroys the tokeniser, extracting the string vector.
