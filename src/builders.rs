@@ -123,16 +123,13 @@ impl LineTokeniser for fn() -> StockTokeniser {
 }
 
 
-/// Unpacks a line into its constituent words.
-#[experimental]
-pub fn unpack(line: &str) -> Result<Vec<String>, Error> {
-    c_style_tokeniser.line(line)
-}
-
-
 #[cfg(test)]
 mod test {
-    use super::{ unpack, whitespace_split_tokeniser };
+    use super::{
+        LineTokeniser,
+        c_style_tokeniser,
+        whitespace_split_tokeniser
+    };
     use tokeniser::{
         Error,
         UnmatchedQuote,
@@ -140,47 +137,49 @@ mod test {
     };
 
     #[test]
-    fn unpack_unmatched_quote() {
-        assert_eq!(unpack("\"abcde"), Err(UnmatchedQuote));
+    fn c_style_unmatched_quote() {
+        assert_eq!(c_style_tokeniser.line("\"abcde"), Err(UnmatchedQuote));
     }
 
     #[test]
-    fn unpack_unfinished_escape() {
-        assert_eq!(unpack("zxcvbn m\\"), Err(UnfinishedEscape));
+    fn c_style_unfinished_escape() {
+        assert_eq!(c_style_tokeniser.line("zxcvbn m\\"), Err(UnfinishedEscape));
     }
 
     #[test]
-    fn unpack_empty_string() {
-        assert_eq!(unpack(""), Ok(vec![]));
+    fn c_style_empty_string() {
+        assert_eq!(c_style_tokeniser.line(""), Ok(vec![]));
     }
 
     #[test]
-    fn unpack_leading_whitespace() {
+    fn c_style_leading_whitespace() {
         let rhs = vec![ "abc".into_string(), "def".into_string() ];
-        assert_eq!(unpack("     abc def"), Ok(rhs));
+        assert_eq!(c_style_tokeniser.line("     abc def"), Ok(rhs));
     }
 
     #[test]
-    fn unpack_trailing_whitespace() {
+    fn c_style_trailing_whitespace() {
         let rhs = vec![ "ghi".into_string(), "jkl".into_string() ];
-        assert_eq!(unpack("ghi jkl     \n"), Ok(rhs));
+        assert_eq!(c_style_tokeniser.line("ghi jkl     \n"), Ok(rhs));
     }
 
     #[test]
-    fn unpack_enqueue_command() {
+    fn c_style_enqueue_command() {
         let lhs =
             "enqueue file \"C:\\\\Users\\\\Test\\\\Artist - Title.mp3\" 1";
         let rhs = vec![ "enqueue".into_string(),
                         "file".into_string(),
                         "C:\\Users\\Test\\Artist - Title.mp3".into_string(),
                         "1".into_string() ];
-        assert_eq!(unpack(lhs), Ok(rhs));
+        assert_eq!(c_style_tokeniser.line(lhs), Ok(rhs));
     }
 
     #[test]
-    fn unpack_escaped_newline() {
-        assert_eq!(unpack("abc\\nde"),     Ok(vec![ "abc\nde".into_string() ]));
-        assert_eq!(unpack("\"abc\\nde\""), Ok(vec![ "abc\nde".into_string() ]));
+    fn c_style_escaped_newline() {
+        assert_eq!(c_style_tokeniser.line("abc\\nde"),
+                   Ok(vec![ "abc\nde".into_string() ]));
+        assert_eq!(c_style_tokeniser.line("\"abc\\nde\""),
+                   Ok(vec![ "abc\nde".into_string() ]));
     }
 
     /// The whitespace_split_tokeniser should provide the same strings as
@@ -190,7 +189,7 @@ mod test {
         let line_slice = line.as_slice();
 
         let lhs: Result<Vec<String>, Error> =
-            whitespace_split_tokeniser().add_line(line_slice).into_strings();
+            whitespace_split_tokeniser.line(line_slice);
         let rhs: Result<Vec<String>, Error> =
             Ok(line_slice.words().map(|x| x.into_string()).collect());
 
