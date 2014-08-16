@@ -90,7 +90,7 @@ currently takes:
 
 * A Map from opening quote characters to tuples of their corresponding closing
   quote character and the _quote mode_ (currently `IgnoreEscapes` or
-  `ParseEscapes`, similar to POSIX shell's `'single quote'` and "double quote"
+  `ParseEscapes`, similar to POSIX shell's `'single quote'` and `"double quote"`
   behaviour respectively);
 * A Map from escape characters to the literals that should replace them (
   currently, an empty map denotes shell-style escaping in which each character
