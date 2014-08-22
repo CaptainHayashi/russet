@@ -32,6 +32,7 @@ pub use escape_scheme::{
     LiteralEscape,
     MapEscape
 };
+pub use line::LineTokeniser;
 pub use tokeniser::{
     Error,
     IgnoreEscapes,
@@ -42,4 +43,5 @@ pub use tokeniser::{
 
 pub mod builders;
 pub mod escape_scheme;
+pub mod line;
 pub mod tokeniser;
